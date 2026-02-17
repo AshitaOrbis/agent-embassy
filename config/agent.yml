@@ -1,0 +1,51 @@
+# Agent Embassy - Agent Definition
+# Configure what agent runs, what APIs it can access, and resource limits.
+
+agent:
+  # Display name
+  name: my-agent
+
+  # Docker image (override AGENT_IMAGE in .env)
+  # image: node:22-slim
+
+  # Command to run inside the container (override AGENT_COMMAND in .env)
+  # command: node /app/agent.js
+
+  # Description of what this agent does
+  description: "A sandboxed AI agent"
+
+# Network access - domains the agent is allowed to reach
+# These are written to the Squid egress proxy allowlist.
+allowed_domains:
+  - api.openai.com
+  - api.anthropic.com
+  # Add more domains as needed:
+  # - api.example.com
+  # - .github.com
+
+# Resource limits
+resources:
+  memory: 2G
+  cpus: 2
+  pids: 100
+
+# Inbox/Outbox configuration
+communication:
+  # Task format the agent accepts
+  inbox_format: json
+  # Output format the agent produces
+  outbox_format: json
+  # Maximum output file size (bytes)
+  max_output_size: 5242880  # 5MB
+
+# Validation rules for agent output
+validation:
+  # Reject files containing these patterns
+  blocked_patterns:
+    - "-----BEGIN.*PRIVATE KEY-----"
+    - "sk-[a-zA-Z0-9]{48}"
+    - "password\\s*[:=]\\s*['\"]"
+  # Maximum files per hour
+  rate_limit: 10
+  # Reject symlinks
+  reject_symlinks: true

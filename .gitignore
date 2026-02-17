@@ -1,0 +1,20 @@
+# Secrets
+secrets/
+*.key
+*.pem
+
+# Runtime state
+agent-state/
+logs/
+outbox/rejected/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc

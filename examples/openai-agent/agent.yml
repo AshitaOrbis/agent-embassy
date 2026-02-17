@@ -1,0 +1,14 @@
+# Example: OpenAI API Agent
+# An agent that receives prompts and calls the OpenAI API.
+
+agent:
+  name: openai-agent
+  description: "Processes prompts through OpenAI's API"
+
+allowed_domains:
+  - api.openai.com
+
+resources:
+  memory: 1G
+  cpus: 1
+  pids: 50

@@ -1,0 +1,96 @@
+services:
+  agent:
+    image: ${AGENT_IMAGE:-node:22-slim}
+    container_name: embassy-agent
+    restart: unless-stopped
+    init: true
+
+    # SECURITY: Run as non-root user
+    user: "1000:1000"
+
+    # SECURITY: Read-only rootfs with tmpfs for writable paths
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M,mode=1777,uid=1000,gid=1000
+      - /run:size=50M,mode=755,uid=1000,gid=1000
+
+    # SECURITY: Drop ALL capabilities, no privilege escalation
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    # SECURITY: Minimal volumes - agent can only read inbox, write outbox
+    volumes:
+      - ./inbox:/app/inbox:ro          # Tasks from host (read-only)
+      - ./outbox:/app/outbox:rw        # Results from agent (validated by host)
+      - ./logs:/app/logs:rw            # Audit trail
+      - ./agent-state:/app/state:rw    # Persistent agent state
+      - ./config/agent.yml:/app/config/agent.yml:ro  # Agent definition
+
+    # Override with your agent's entrypoint
+    command: ${AGENT_COMMAND:-node /app/agent.js}
+
+    environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
+      # Proxy all traffic through egress filter
+      - HTTP_PROXY=http://egress-proxy:3128
+      - HTTPS_PROXY=http://egress-proxy:3128
+      - NO_PROXY=localhost,127.0.0.1
+
+    # SECURITY: Resource limits
+    mem_limit: ${AGENT_MEM_LIMIT:-2G}
+    cpus: ${AGENT_CPUS:-2}
+    pids_limit: ${AGENT_PIDS_LIMIT:-100}
+
+    networks:
+      - embassy-internal
+
+    depends_on:
+      - egress-proxy
+
+  # SECURITY: Egress proxy (allowlist-only internet access)
+  egress-proxy:
+    image: ubuntu/squid:latest
+    container_name: embassy-egress
+    read_only: true
+    tmpfs:
+      - /var/spool/squid:size=100M,uid=13,gid=13
+      - /var/log/squid:size=50M,uid=13,gid=13
+      - /run:size=10M,mode=755
+    volumes:
+      - ./config/squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      embassy-internal:
+      embassy-external:
+    mem_limit: 256M
+    cpus: 0.5
+
+  # Host-side output validator
+  validator:
+    image: python:3.12-slim
+    container_name: embassy-validator
+    read_only: true
+    tmpfs:
+      - /tmp:size=50M,mode=1777
+    volumes:
+      - ./outbox:/app/outbox:rw
+      - ./scripts/validate_outbox.py:/app/validate.py:ro
+      - ./config/validation-rules.yml:/app/rules.yml:ro
+    command: python /app/validate.py --watch /app/outbox --rules /app/rules.yml
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128M
+    cpus: 0.25
+    networks: []
+
+networks:
+  embassy-internal:
+    driver: bridge
+    internal: true   # No direct internet - all traffic through egress proxy
+  embassy-external:
+    driver: bridge   # Egress proxy's outbound access

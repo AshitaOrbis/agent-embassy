@@ -1,0 +1,39 @@
+# Validation rules for agent output files
+# The validator checks all files written to outbox/ against these rules.
+
+# Maximum file size in bytes
+max_file_size: 5242880  # 5MB
+
+# Rate limit: max files per hour
+rate_limit: 10
+
+# Reject symlinks (prevents path traversal)
+reject_symlinks: true
+
+# Blocked content patterns (regex)
+# Files containing these patterns are moved to outbox/rejected/
+blocked_patterns:
+  # Private keys
+  - "-----BEGIN.*PRIVATE KEY-----"
+  # OpenAI API keys
+  - "sk-[a-zA-Z0-9]{48}"
+  # AWS credentials
+  - "AKIA[0-9A-Z]{16}"
+  # Generic secrets
+  - "password\\s*[:=]\\s*['\"][^'\"]{8,}"
+  # Internal network addresses
+  - "192\\.168\\."
+  - "10\\.0\\."
+  - "172\\.(1[6-9]|2[0-9]|3[01])\\."
+
+# Required fields in JSON output (if outbox_format is json)
+required_json_fields:
+  - type
+  - timestamp
+
+# Allowed output file extensions
+allowed_extensions:
+  - .json
+  - .md
+  - .txt
+  - .csv
