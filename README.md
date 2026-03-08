@@ -1,5 +1,7 @@
 # Agent Embassy
 
+> **Note: This project is archived.** The embassy pattern proved sound as a containment primitive (Docker isolation, egress proxy, output validation) but insufficient as a complete agent sandboxing solution. See the [post-mortem blog series](https://ashitaorbis.com/posts/033-the-container-that-forgot-to-stop) for what we learned. For active alternatives, see [Docker AI Sandboxes](https://docs.docker.com/ai/sandbox/) and [AISI Sandboxing](https://github.com/UKGovernmentBEIS/aisi-sandboxing).
+
 Turnkey Docker Compose setup for sandboxing AI agents. Drop in your agent, configure allowed domains, run one command. Your agent is isolated with an egress proxy, no host filesystem access, and host-side output validation.
 
 ## Why
