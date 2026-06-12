@@ -2,7 +2,9 @@
 
 > **Note: This project is archived.** The embassy pattern proved sound as a containment primitive (Docker isolation, egress proxy, output validation) but insufficient as a complete agent sandboxing solution. See the [post-mortem blog series](https://ashitaorbis.com/posts/033-the-container-that-forgot-to-stop) for what we learned. For active alternatives, see [Docker AI Sandboxes](https://docs.docker.com/ai/sandbox/) and [AISI Sandboxing](https://github.com/UKGovernmentBEIS/aisi-sandboxing).
 
-Turnkey Docker Compose setup for sandboxing AI agents. Drop in your agent, configure allowed domains, run one command. Your agent is isolated with an egress proxy, no host filesystem access, and host-side output validation.
+Turnkey Docker Compose **hardening template** for running AI agents you broadly trust. Drop in your agent, configure allowed domains, run one command. It applies defense-in-depth (egress allowlist, dropped capabilities, read-only root filesystem, resource limits, and best-effort output validation).
+
+> **Not a containment boundary for actively malicious code.** This is layered hardening on ordinary Docker isolation, not a security sandbox. An adversarial agent has documented paths to defeat it: DNS-based egress can bypass the proxy on some Docker/Moby versions; the output validator observes files rather than gating them (symlink/path-traversal/validate-then-mutate/fail-open bypasses exist); and writable host bind mounts are reachable outside the "controlled" channel. For untrusted or potentially-compromised agents use a real isolation layer (gVisor, Firecracker/Kata, or a network-firewalled VM). Treat this repo as a starting pattern to harden, not a guarantee.
 
 ## Why
 
@@ -117,32 +119,31 @@ Rejected files are moved to `outbox/rejected/` with a JSON report explaining why
 | `AGENT_CPUS` | `2` | CPU limit |
 | `AGENT_PIDS_LIMIT` | `100` | Process limit (prevents fork bombs) |
 
-## Security Model
+## Security Model (hardening layers, best-effort)
 
-| Layer | Protection |
-|-------|-----------|
-| **Filesystem** | Read-only rootfs, tmpfs for temp files |
-| **Capabilities** | All Linux capabilities dropped |
-| **Privileges** | `no-new-privileges`, non-root user |
-| **Network** | Internal network only; egress proxy allowlist |
-| **Resources** | Memory, CPU, and PID limits |
-| **Output** | Host-side validation of all agent output |
-| **Communication** | Inbox read-only, outbox write-only (from agent's perspective) |
+These layers raise the cost of misbehavior for a *broadly-trusted* agent. They are **not** guarantees against adversarial code — see the caveats column.
+
+| Layer | Hardening | Adversarial caveat |
+|-------|-----------|--------------------|
+| **Filesystem** | Read-only rootfs, tmpfs for temp files | Writable host bind mounts (outbox/logs/state) are still reachable |
+| **Capabilities** | All Linux capabilities dropped | Container isolation only; not a syscall sandbox |
+| **Privileges** | `no-new-privileges`, non-root user | — |
+| **Network** | Internal network + egress proxy allowlist | DNS-based egress can bypass the proxy on some Docker/Moby versions |
+| **Resources** | Memory, CPU, and PID limits | Disk/inode exhaustion via host mounts not bounded |
+| **Output** | Host-side validation of agent output | **Observational, not a gate** — symlink, path-traversal, validate-then-mutate, and fail-open bypasses exist |
+| **Communication** | Inbox read-only, outbox write-only (agent's view) | — |
 
 ### What the agent CAN do
-- Read tasks from inbox
-- Write results to outbox
+- Read tasks from inbox; write results to outbox
 - Call APIs on allowlisted domains (through egress proxy)
 - Use /tmp for scratch space (tmpfs, size-limited)
 
-### What the agent CANNOT do
-- Access host filesystem
-- Reach non-allowlisted domains
-- Escalate privileges
-- Fork-bomb (PID limit)
-- Exhaust memory (mem limit)
-- Write symlinks to outbox (rejected by validator)
-- Exfiltrate secrets (blocked by content patterns)
+### What this is designed to resist (for trusted agents — defeatable by adversarial code)
+- Casual host-filesystem access, non-allowlisted egress, privilege escalation
+- Fork bombs and memory exhaustion (PID/mem limits)
+- Accidental secret leakage and oversized/symlinked outbox files (best-effort validation)
+
+A determined or compromised agent can defeat each of these — see the top-of-README note and the [post-mortem](https://ashitaorbis.com/posts/033-the-container-that-forgot-to-stop).
 
 ## Examples
 
