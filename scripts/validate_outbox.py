@@ -10,7 +10,6 @@ Rejected files are moved to outbox/rejected/ with a rejection report.
 
 import argparse
 import json
-import os
 import re
 import shutil
 import sys
@@ -18,44 +17,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-try:
-    import yaml
-    HAS_YAML = True
-except ImportError:
-    HAS_YAML = False
-
-
 def load_rules(rules_path: str) -> dict:
-    """Load validation rules from YAML or use defaults."""
-    defaults = {
-        "max_file_size": 5 * 1024 * 1024,
-        "rate_limit": 10,
-        "reject_symlinks": True,
-        "blocked_patterns": [
-            r"-----BEGIN.*PRIVATE KEY-----",
-            r"sk-[a-zA-Z0-9]{48}",
-            r"AKIA[0-9A-Z]{16}",
-        ],
-        "required_json_fields": [],
-        "allowed_extensions": [".json", ".md", ".txt", ".csv"],
-    }
-
-    if not os.path.exists(rules_path):
-        return defaults
-
-    if HAS_YAML:
-        with open(rules_path) as f:
-            rules = yaml.safe_load(f) or {}
-        return {**defaults, **rules}
-
-    # Fallback: try JSON
-    try:
-        with open(rules_path) as f:
-            rules = json.load(f)
-        return {**defaults, **rules}
-    except (json.JSONDecodeError, ValueError):
-        print(f"Warning: Could not parse {rules_path}, using defaults")
-        return defaults
+    """Load the complete JSON policy, failing closed on any error."""
+    with open(rules_path) as policy_file:
+        rules = json.load(policy_file)
+    if not isinstance(rules, dict):
+        raise ValueError(f"Validation policy must be a JSON object: {rules_path}")
+    return rules
 
 
 def validate_file(filepath: Path, rules: dict) -> tuple[bool, str]:
@@ -164,7 +132,7 @@ def main():
     parser = argparse.ArgumentParser(description="Agent Embassy output validator")
     parser.add_argument("path", nargs="?", help="File or directory to validate")
     parser.add_argument("--watch", action="store_true", help="Watch directory for new files")
-    parser.add_argument("--rules", default="/app/rules.yml", help="Path to validation rules")
+    parser.add_argument("--rules", default="/app/rules.json", help="Path to validation rules")
     parser.add_argument("--reject-dir", default=None, help="Directory for rejected files")
     args = parser.parse_args()
 

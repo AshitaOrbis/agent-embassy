@@ -1,23 +1,9 @@
 # Example: Web Scraper Agent
 # An agent that scrapes content from specific sites and saves results.
+# Metadata only; Docker Compose does not read policy from this file.
+# Configure resources in .env, egress in config/squid.conf, and observational
+# output checks in config/validation-rules.json.
 
 agent:
   name: web-scraper
   description: "Scrapes allowlisted websites and extracts structured data"
-
-allowed_domains:
-  - news.ycombinator.com
-  - arxiv.org
-  - .wikipedia.org
-
-resources:
-  memory: 2G
-  cpus: 2
-  pids: 100
-
-validation:
-  blocked_patterns:
-    - "-----BEGIN.*PRIVATE KEY-----"
-    - "sk-[a-zA-Z0-9]{48}"
-  max_output_size: 10485760  # 10MB - scraper may produce larger files
-  rate_limit: 50  # Higher rate for batch scraping

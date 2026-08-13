@@ -1,8 +1,8 @@
 # Agent Embassy
 
-> **Note: This project is archived.** The embassy pattern proved sound as a containment primitive (Docker isolation, egress proxy, output validation) but insufficient as a complete agent sandboxing solution. See the [post-mortem blog series](https://ashitaorbis.com/posts/033-the-container-that-forgot-to-stop) for what we learned. For active alternatives, see [Docker AI Sandboxes](https://docs.docker.com/ai/sandbox/) and [AISI Sandboxing](https://github.com/UKGovernmentBEIS/aisi-sandboxing).
+> **Note: This project is archived.** The embassy pattern demonstrated several useful hardening layers (Docker isolation, an egress proxy, and output validation), but those layers do not form a containment primitive or complete agent sandbox. See the [post-mortem blog series](https://ashitaorbis.com/posts/033-the-container-that-forgot-to-stop) for what we learned. For active alternatives, see [Docker AI Sandboxes](https://docs.docker.com/ai/sandbox/) and [AISI Sandboxing](https://github.com/UKGovernmentBEIS/aisi-sandboxing).
 
-Turnkey Docker Compose **hardening template** for running AI agents you broadly trust. Drop in your agent, configure allowed domains, run one command. It applies defense-in-depth (egress allowlist, dropped capabilities, read-only root filesystem, resource limits, and best-effort output validation).
+Archived Docker Compose **hardening template** for running AI agents you broadly trust. Supply an agent image and its real entrypoint, then configure the operative controls directly. It applies defense-in-depth (egress allowlist, dropped capabilities, read-only root filesystem, resource limits, and best-effort output validation).
 
 > **Not a containment boundary for actively malicious code.** This is layered hardening on ordinary Docker isolation, not a security sandbox. An adversarial agent has documented paths to defeat it: DNS-based egress can bypass the proxy on some Docker/Moby versions; the output validator observes files rather than gating them (symlink/path-traversal/validate-then-mutate/fail-open bypasses exist); and writable host bind mounts are reachable outside the "controlled" channel. For untrusted or potentially-compromised agents use a real isolation layer (gVisor, Firecracker/Kata, or a network-firewalled VM). Treat this repo as a starting pattern to harden, not a guarantee.
 
@@ -45,8 +45,11 @@ cd agent-embassy
 
 # 2. Configure
 cp .env.example .env
-# Edit config/agent.yml with your agent's settings
+# Set AGENT_IMAGE to an image that already contains your agent program
+# Set AGENT_COMMAND to that program's entrypoint inside the image
 # Edit config/squid.conf to allowlist your agent's API endpoints
+# Edit config/validation-rules.json for observational output checks
+# config/agent.yml is optional metadata for the agent itself; Compose ignores it
 
 # 3. Create directories
 mkdir -p inbox outbox logs agent-state secrets
@@ -65,23 +68,15 @@ ls outbox/
 
 ### Agent Definition (`config/agent.yml`)
 
-Define what your agent is, what it can access, and how its output is validated:
+This file is optional metadata mounted into the agent container. Docker Compose does **not** read it to configure policy:
 
 ```yaml
 agent:
   name: my-research-agent
   description: "Searches papers and summarizes findings"
-
-allowed_domains:
-  - api.openai.com
-  - api.semanticscholar.org
-  - arxiv.org
-
-resources:
-  memory: 4G
-  cpus: 2
-  pids: 100
 ```
+
+Set image, command, and resource limits in `.env`; edit `config/squid.conf` for egress destinations; and edit `config/validation-rules.json` for observational output checks.
 
 ### Egress Proxy (`config/squid.conf`)
 
@@ -92,29 +87,30 @@ acl allowed_hosts dstdomain api.openai.com
 acl allowed_hosts dstdomain .github.com
 ```
 
-### Output Validation (`config/validation-rules.yml`)
+### Output Validation (`config/validation-rules.json`)
 
 Scan every file the agent writes for sensitive data:
 
-```yaml
-blocked_patterns:
-  - "-----BEGIN.*PRIVATE KEY-----"
-  - "sk-[a-zA-Z0-9]{48}"
-  - "AKIA[0-9A-Z]{16}"
-
-max_file_size: 5242880  # 5MB
-rate_limit: 10          # files per hour
-reject_symlinks: true
+```json
+{
+  "max_file_size": 5242880,
+  "reject_symlinks": true,
+  "blocked_patterns": [
+    "-----BEGIN.*PRIVATE KEY-----",
+    "sk-[a-zA-Z0-9]{48}",
+    "AKIA[0-9A-Z]{16}"
+  ]
+}
 ```
 
-Rejected files are moved to `outbox/rejected/` with a JSON report explaining why.
+The validator exits on a missing or malformed policy instead of silently selecting weaker defaults. Rejected files are moved to `outbox/rejected/` with a JSON report explaining why.
 
 ### Environment Variables (`.env`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AGENT_IMAGE` | `node:22-slim` | Docker image for your agent |
-| `AGENT_COMMAND` | `node /app/agent.js` | Entrypoint command |
+| `AGENT_IMAGE` | Required | Docker image that already contains your agent program |
+| `AGENT_COMMAND` | Required | Entrypoint present inside `AGENT_IMAGE` |
 | `AGENT_MEM_LIMIT` | `2G` | Memory limit |
 | `AGENT_CPUS` | `2` | CPU limit |
 | `AGENT_PIDS_LIMIT` | `100` | Process limit (prevents fork bombs) |
@@ -147,7 +143,7 @@ A determined or compromised agent can defeat each of these — see the top-of-RE
 
 ## Examples
 
-See the `examples/` directory for ready-to-use agent configurations:
+See the `examples/` directory for metadata and operative Squid-policy examples. Metadata files alone do not configure Compose:
 
 - `examples/openai-agent/` - Agent that calls OpenAI API
 - `examples/web-scraper/` - Agent that scrapes allowlisted sites
@@ -158,9 +154,9 @@ See the `examples/` directory for ready-to-use agent configurations:
 agent-embassy/
 ├── docker-compose.yml          # Three-container orchestration
 ├── config/
-│   ├── agent.yml               # Agent definition
+│   ├── agent.yml               # Optional metadata; not Compose policy
 │   ├── squid.conf              # Egress proxy allowlist
-│   └── validation-rules.yml    # Output validation rules
+│   └── validation-rules.json   # Observational output checks
 ├── scripts/
 │   └── validate_outbox.py      # Host-side output validator
 ├── inbox/                      # Tasks → Agent (read-only for agent)
@@ -179,11 +175,11 @@ agent-embassy/
 
 1. **You** write task files to `inbox/`
 2. **Agent** reads tasks, does work, writes results to `outbox/`
-3. **Egress proxy** filters all network traffic through domain allowlist
-4. **Validator** checks every output file for sensitive data, size limits, and policy compliance
-5. **You** consume validated results from `outbox/`
+3. **Egress proxy** applies its allowlist to traffic that reaches the proxy
+4. **Validator** observes new output files and checks them against its policy
+5. **You** independently decide whether an output is safe to consume
 
-The agent never touches your host filesystem. It never reaches domains you didn't approve. Every output file is scanned before you see it.
+These are best-effort hardening layers, not guarantees: the agent can reach writable host bind mounts, DNS behavior can bypass the proxy on affected Docker/Moby versions, and the validator is observational rather than a gate, so outputs can be consumed, mutated, or missed before validation.
 
 ## Acknowledgements
 

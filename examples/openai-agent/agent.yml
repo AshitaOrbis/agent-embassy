@@ -1,14 +1,8 @@
 # Example: OpenAI API Agent
 # An agent that receives prompts and calls the OpenAI API.
+# Metadata only; Docker Compose does not read policy from this file.
+# Use .env for resources and examples/openai-agent/squid.conf for egress policy.
 
 agent:
   name: openai-agent
   description: "Processes prompts through OpenAI's API"
-
-allowed_domains:
-  - api.openai.com
-
-resources:
-  memory: 1G
-  cpus: 1
-  pids: 50

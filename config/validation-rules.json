@@ -1,0 +1,23 @@
+{
+  "max_file_size": 5242880,
+  "reject_symlinks": true,
+  "blocked_patterns": [
+    "-----BEGIN.*PRIVATE KEY-----",
+    "sk-[a-zA-Z0-9]{48}",
+    "AKIA[0-9A-Z]{16}",
+    "password\\s*[:=]\\s*['\"][^'\"]{8,}",
+    "192\\.168\\.",
+    "10\\.0\\.",
+    "172\\.(1[6-9]|2[0-9]|3[01])\\."
+  ],
+  "required_json_fields": [
+    "type",
+    "timestamp"
+  ],
+  "allowed_extensions": [
+    ".json",
+    ".md",
+    ".txt",
+    ".csv"
+  ]
+}

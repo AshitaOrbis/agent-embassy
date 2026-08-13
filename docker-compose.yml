@@ -1,6 +1,6 @@
 services:
   agent:
-    image: ${AGENT_IMAGE:-node:22-slim}
+    image: ${AGENT_IMAGE:?Set AGENT_IMAGE in .env to an image containing your agent}
     container_name: embassy-agent
     restart: unless-stopped
     init: true
@@ -28,8 +28,8 @@ services:
       - ./agent-state:/app/state:rw    # Persistent agent state
       - ./config/agent.yml:/app/config/agent.yml:ro  # Agent definition
 
-    # Override with your agent's entrypoint
-    command: ${AGENT_COMMAND:-node /app/agent.js}
+    # Required: the selected image must already contain this entrypoint
+    command: ${AGENT_COMMAND:?Set AGENT_COMMAND in .env to an entrypoint present in AGENT_IMAGE}
 
     environment:
       - HOME=/home/node
@@ -77,8 +77,8 @@ services:
     volumes:
       - ./outbox:/app/outbox:rw
       - ./scripts/validate_outbox.py:/app/validate.py:ro
-      - ./config/validation-rules.yml:/app/rules.yml:ro
-    command: python /app/validate.py --watch /app/outbox --rules /app/rules.yml
+      - ./config/validation-rules.json:/app/rules.json:ro
+    command: python /app/validate.py --watch /app/outbox --rules /app/rules.json
     user: "1000:1000"
     cap_drop:
       - ALL
