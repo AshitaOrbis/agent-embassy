@@ -5,7 +5,9 @@ services:
     restart: unless-stopped
     init: true
 
-    # SECURITY: Run as non-root user
+    # SECURITY: Run as non-root user. This OVERRIDES the image's own user:
+    # AGENT_IMAGE must work when run as UID/GID 1000 (adjust here if yours
+    # requires a different non-root UID).
     user: "1000:1000"
 
     # SECURITY: Read-only rootfs with tmpfs for writable paths
@@ -37,6 +39,9 @@ services:
     command: ${AGENT_COMMAND:?Set AGENT_COMMAND in .env to an entrypoint present in AGENT_IMAGE}
 
     environment:
+      # Leftover from the removed Node default: this path may not exist in your
+      # image and the rootfs is read-only, so software that writes under HOME
+      # will fail. Point it at a writable tmpfs path (e.g. /tmp) if needed.
       - HOME=/home/node
       - TERM=xterm-256color
       # Proxy all traffic through egress filter

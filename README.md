@@ -111,7 +111,7 @@ The validator exits on a missing or malformed policy instead of silently selecti
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AGENT_IMAGE` | Required | Docker image that already contains your agent program |
+| `AGENT_IMAGE` | Required | Docker image that already contains your agent program. Compose forces UID/GID 1000 and sets `HOME=/home/node` (a leftover of the removed Node default): the image must run as UID 1000 with a read-only or absent `/home/node`, or you must adapt those fields in `docker-compose.yml` |
 | `AGENT_COMMAND` | Required | Entrypoint present inside `AGENT_IMAGE` |
 | `AGENT_MEM_LIMIT` | `2G` | Memory limit |
 | `AGENT_CPUS` | `2` | CPU limit |
