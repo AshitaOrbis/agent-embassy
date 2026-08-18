@@ -110,6 +110,11 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
         self.assertIn("DNS", readme)
         self.assertIn("observational", readme)
 
+    def test_readme_discloses_non_reproducible_runtime(self):
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn("Execution is not reproducible", readme)
+        self.assertIn("mutable image tags", readme)
+
     def test_example_squid_policy_is_marked_reference_only_with_copy_step(self):
         example = (ROOT / "examples" / "openai-agent" / "agent.yml").read_text()
         self.assertIn("REFERENCE ONLY", example)

@@ -62,6 +62,8 @@ services:
 
   # SECURITY: Egress proxy (allowlist-only internet access)
   egress-proxy:
+    # Mutable tag, not pinned to a reviewed digest: a clone today runs whatever
+    # this tag points at now, not bytes reviewed at archive time.
     image: ubuntu/squid:latest
     container_name: embassy-egress
     read_only: true
@@ -79,6 +81,7 @@ services:
 
   # Host-side output validator
   validator:
+    # Mutable tag, not pinned to a reviewed digest (see egress-proxy note).
     image: python:3.12-slim
     container_name: embassy-validator
     read_only: true

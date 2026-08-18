@@ -126,6 +126,8 @@ this repository does not document one.
 
 These layers raise the cost of misbehavior for a *broadly-trusted* agent. They are **not** guarantees against adversarial code — see the caveats column.
 
+**Execution is not reproducible.** `docker-compose.yml` pulls mutable image tags (`ubuntu/squid:latest`, `python:3.12-slim`), so a clone today runs whatever those tags point at now — not bytes reviewed when this repository was archived. Do not treat the archive as a known-good runtime; pin your own digests if you need one.
+
 | Layer | Hardening | Adversarial caveat |
 |-------|-----------|--------------------|
 | **Filesystem** | Read-only rootfs, tmpfs for temp files | Writable host bind mounts (outbox/logs/state) are still reachable |
