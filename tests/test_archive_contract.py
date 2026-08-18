@@ -110,6 +110,14 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
         self.assertIn("DNS", readme)
         self.assertIn("observational", readme)
 
+    def test_example_squid_policy_is_marked_reference_only_with_copy_step(self):
+        example = (ROOT / "examples" / "openai-agent" / "agent.yml").read_text()
+        self.assertIn("REFERENCE ONLY", example)
+        self.assertIn("cp examples/openai-agent/squid.conf config/squid.conf", example)
+        readme = (ROOT / "README.md").read_text()
+        self.assertNotIn("operative Squid-policy examples", readme)
+        self.assertIn("cp examples/openai-agent/squid.conf config/squid.conf", readme)
+
     def test_outbox_is_described_as_read_write_not_write_only(self):
         readme = (ROOT / "README.md").read_text()
         self.assertNotIn("outbox write-only", readme)

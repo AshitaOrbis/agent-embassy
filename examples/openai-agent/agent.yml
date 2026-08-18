@@ -1,7 +1,10 @@
 # Example: OpenAI API Agent
 # An agent that receives prompts and calls the OpenAI API.
 # Metadata only; Docker Compose does not read policy from this file.
-# Use .env for resources and examples/openai-agent/squid.conf for egress policy.
+# Use .env for resources. The squid.conf beside this file is REFERENCE ONLY —
+# Compose always mounts config/squid.conf. To actually use the example policy,
+# copy it over the operative file before starting:
+#   cp examples/openai-agent/squid.conf config/squid.conf
 
 agent:
   name: openai-agent

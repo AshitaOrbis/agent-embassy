@@ -150,7 +150,7 @@ A determined or compromised agent can defeat each of these — see the top-of-RE
 
 ## Examples
 
-See the `examples/` directory for metadata and operative Squid-policy examples. Metadata files alone do not configure Compose:
+See the `examples/` directory for metadata and reference Squid policies. Nothing under `examples/` is read by Compose — to use an example egress policy, copy it over `config/squid.conf` before starting (e.g. `cp examples/openai-agent/squid.conf config/squid.conf`):
 
 - `examples/openai-agent/` - Agent that calls OpenAI API
 - `examples/web-scraper/` - Agent that scrapes allowlisted sites
