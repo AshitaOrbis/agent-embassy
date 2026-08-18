@@ -8,7 +8,7 @@ Archived Docker Compose **hardening template** for running AI agents you broadly
 
 ## Why
 
-AI agents need internet access to be useful but unrestricted access is dangerous. Agent Embassy implements the "embassy pattern": your agent lives in a controlled environment where it can communicate with the outside world only through supervised channels.
+AI agents need internet access to be useful but unrestricted access is dangerous. Agent Embassy implements the "embassy pattern": your agent lives in a hardened environment where its ordinary HTTP(S) traffic is routed through supervised channels. Supervision covers traffic that reaches the proxy — the documented bypasses in the note above remain open.
 
 **The problem:** You want to run an AI agent that calls APIs, browses the web, or processes data. But you don't want it reading your SSH keys, exfiltrating data to arbitrary endpoints, or consuming unlimited resources.
 
@@ -33,7 +33,7 @@ AI agents need internet access to be useful but unrestricted access is dangerous
 ```
 
 - **Agent container**: Read-only filesystem, dropped capabilities, resource limits, no direct internet
-- **Egress proxy**: Squid-based allowlist. Agent can only reach domains you approve.
+- **Egress proxy**: Squid-based allowlist, applied to HTTP/HTTPS traffic that reaches the proxy. DNS and the other documented bypasses stay outside this control.
 - **Validator**: Watches outbox for sensitive data leaks, oversized files, and policy violations
 
 ## Quick Start
@@ -80,7 +80,7 @@ Set image, command, and resource limits in `.env`; edit `config/squid.conf` for 
 
 ### Egress Proxy (`config/squid.conf`)
 
-Control exactly which domains your agent can reach. By default, everything is blocked. Add domains explicitly:
+Controls which domains the agent can reach over HTTP/HTTPS traffic that goes through Squid (DNS and the other documented bypasses are outside this control). The shipped policy allows the reserved placeholder `.example.com` and denies everything else — it is not a deny-all default until you remove that placeholder line. Add your domains explicitly:
 
 ```
 acl allowed_hosts dstdomain api.openai.com

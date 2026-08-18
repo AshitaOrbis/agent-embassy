@@ -110,6 +110,15 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
         self.assertIn("DNS", readme)
         self.assertIn("observational", readme)
 
+    def test_readme_egress_claims_are_scoped_and_placeholder_is_disclosed(self):
+        readme = (ROOT / "README.md").read_text()
+        self.assertNotIn("only through supervised channels", readme)
+        self.assertNotIn("can only reach domains you approve", readme)
+        self.assertNotIn("By default, everything is blocked", readme)
+        self.assertIn("placeholder `.example.com`", readme)
+        squid = (ROOT / "config" / "squid.conf").read_text()
+        self.assertIn("placeholder", squid.lower())
+
     def test_validator_and_readme_use_observational_not_gate_language(self):
         validator_source = VALIDATOR_PATH.read_text()
         self.assertNotIn("before allowing it through", validator_source)
