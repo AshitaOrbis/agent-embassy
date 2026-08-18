@@ -134,7 +134,7 @@ These layers raise the cost of misbehavior for a *broadly-trusted* agent. They a
 | **Network** | Internal network + egress proxy allowlist | DNS-based egress can bypass the proxy on some Docker/Moby versions |
 | **Resources** | Memory, CPU, and PID limits | Disk/inode exhaustion via host mounts not bounded |
 | **Output** | Host-side validation of agent output | **Observational, not a gate** — symlink, path-traversal, validate-then-mutate, and fail-open bypasses exist |
-| **Communication** | Inbox read-only, outbox write-only (agent's view) | — |
+| **Communication** | Inbox read-only bind mount; outbox is a read/write host bind mount | Outbox is not one-way: the agent can read, alter, or delete anything in it — including files the host or validator has already seen. It is no confidentiality boundary between runs or agents |
 
 ### What the agent CAN do
 - Read tasks from inbox; write results to outbox

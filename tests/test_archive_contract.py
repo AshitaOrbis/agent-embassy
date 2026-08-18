@@ -110,6 +110,13 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
         self.assertIn("DNS", readme)
         self.assertIn("observational", readme)
 
+    def test_outbox_is_described_as_read_write_not_write_only(self):
+        readme = (ROOT / "README.md").read_text()
+        self.assertNotIn("outbox write-only", readme)
+        self.assertIn("read/write host bind mount", readme)
+        compose = (ROOT / "docker-compose.yml").read_text()
+        self.assertNotIn("agent can only read inbox, write outbox", compose)
+
     def test_readme_egress_claims_are_scoped_and_placeholder_is_disclosed(self):
         readme = (ROOT / "README.md").read_text()
         self.assertNotIn("only through supervised channels", readme)

@@ -20,10 +20,12 @@ services:
     security_opt:
       - no-new-privileges:true
 
-    # SECURITY: Minimal volumes - agent can only read inbox, write outbox
+    # Volumes: inbox is read-only; outbox/logs/state are read/WRITE host bind
+    # mounts, not one-way channels — the agent can read and modify anything in
+    # them, including files the host or validator has already seen.
     volumes:
       - ./inbox:/app/inbox:ro          # Tasks from host (read-only)
-      - ./outbox:/app/outbox:rw        # Results from agent (validated by host)
+      - ./outbox:/app/outbox:rw        # Results from agent (read/write; observed by validator)
       - ./logs:/app/logs:rw            # Audit trail
       - ./agent-state:/app/state:rw    # Persistent agent state
       - ./config/agent.yml:/app/config/agent.yml:ro  # Agent definition
