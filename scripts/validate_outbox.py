@@ -2,10 +2,13 @@
 """
 Agent Embassy - Output Validator
 
-Watches the outbox directory for new files from the sandboxed agent.
-Validates each file against configurable rules before allowing it through.
+Observes top-level, non-hidden files that appear in the outbox directory and
+checks them against configurable rules. This is observational, not a gate:
+files are checked after they are already present in the shared outbox, can be
+consumed or mutated before or without being checked, and directories and
+dotfiles are skipped entirely.
 
-Rejected files are moved to outbox/rejected/ with a rejection report.
+Files that fail a check are moved to outbox/rejected/ with a rejection report.
 """
 
 import argparse

@@ -110,6 +110,14 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
         self.assertIn("DNS", readme)
         self.assertIn("observational", readme)
 
+    def test_validator_and_readme_use_observational_not_gate_language(self):
+        validator_source = VALIDATOR_PATH.read_text()
+        self.assertNotIn("before allowing it through", validator_source)
+        self.assertIn("observational, not a gate", validator_source)
+        readme = (ROOT / "README.md").read_text()
+        self.assertNotIn("Scan every file", readme)
+        self.assertNotIn("# Agent → Host (validated)", readme)
+
     def test_readme_does_not_promise_unwired_secret_mounting(self):
         readme = (ROOT / "README.md").read_text()
         self.assertNotIn("mounted as Docker secrets", readme)

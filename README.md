@@ -89,7 +89,9 @@ acl allowed_hosts dstdomain .github.com
 
 ### Output Validation (`config/validation-rules.json`)
 
-Scan every file the agent writes for sensitive data:
+Observational checks over new top-level, non-hidden outbox files. Directories
+and dotfiles are skipped, and files inside subdirectories are never examined —
+this does not scan everything the agent writes:
 
 ```json
 {
@@ -165,7 +167,7 @@ agent-embassy/
 ├── scripts/
 │   └── validate_outbox.py      # Host-side output validator
 ├── inbox/                      # Tasks → Agent (read-only for agent)
-├── outbox/                     # Agent → Host (validated)
+├── outbox/                     # Agent → Host (observed, not gated)
 │   └── rejected/               # Failed validation
 ├── logs/                       # Audit trail
 ├── agent-state/                # Persistent agent state
