@@ -110,6 +110,12 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
         self.assertIn("DNS", readme)
         self.assertIn("observational", readme)
 
+    def test_readme_does_not_promise_unwired_secret_mounting(self):
+        readme = (ROOT / "README.md").read_text()
+        self.assertNotIn("mounted as Docker secrets", readme)
+        self.assertNotIn("mkdir -p inbox outbox logs agent-state secrets", readme)
+        self.assertIn("Credential injection is not implemented", readme)
+
     def test_agent_metadata_is_not_presented_as_compose_policy(self):
         agent_config = (ROOT / "config" / "agent.yml").read_text()
         self.assertIn("metadata", agent_config.lower())

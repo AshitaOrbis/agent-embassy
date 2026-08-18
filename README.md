@@ -52,7 +52,7 @@ cp .env.example .env
 # config/agent.yml is optional metadata for the agent itself; Compose ignores it
 
 # 3. Create directories
-mkdir -p inbox outbox logs agent-state secrets
+mkdir -p inbox outbox logs agent-state
 
 # 4. Run
 docker compose up -d
@@ -115,6 +115,11 @@ The validator exits on a missing or malformed policy instead of silently selecti
 | `AGENT_CPUS` | `2` | CPU limit |
 | `AGENT_PIDS_LIMIT` | `100` | Process limit (prevents fork bombs) |
 
+**Credential injection is not implemented by this template.** Compose defines no
+Docker secrets and mounts no credentials path into the agent container. If your
+agent needs API keys, you must design and review your own injection mechanism;
+this repository does not document one.
+
 ## Security Model (hardening layers, best-effort)
 
 These layers raise the cost of misbehavior for a *broadly-trusted* agent. They are **not** guarantees against adversarial code — see the caveats column.
@@ -164,7 +169,6 @@ agent-embassy/
 │   └── rejected/               # Failed validation
 ├── logs/                       # Audit trail
 ├── agent-state/                # Persistent agent state
-├── secrets/                    # API keys (mounted as Docker secrets)
 ├── examples/                   # Example agent configurations
 ├── .env.example                # Environment template
 ├── LICENSE                     # MIT
