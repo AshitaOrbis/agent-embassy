@@ -57,11 +57,16 @@ def validate_file(filepath: Path, rules: dict) -> tuple[bool, str]:
     if filepath.suffix == ".json" and rules.get("required_json_fields"):
         try:
             data = json.loads(content)
-            for field in rules["required_json_fields"]:
-                if field not in data:
-                    return False, f"Missing required JSON field: {field}"
         except json.JSONDecodeError:
             return False, "Invalid JSON"
+        # Arrays, strings, numbers, booleans, and null have no fields; a
+        # non-object here previously passed (array of matching strings) or
+        # crashed the watcher (scalar/null TypeError).
+        if not isinstance(data, dict):
+            return False, f"JSON output must be an object, got {type(data).__name__}"
+        for field in rules["required_json_fields"]:
+            if field not in data:
+                return False, f"Missing required JSON field: {field}"
 
     return True, "OK"
 

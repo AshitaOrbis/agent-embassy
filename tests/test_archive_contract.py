@@ -38,6 +38,39 @@ class ValidatorRulesTests(unittest.TestCase):
         self.assertIn("Blocked pattern", reason)
         self.assertEqual(["type", "timestamp"], rules["required_json_fields"])
 
+    def test_required_json_fields_reject_non_object_documents(self):
+        rules = {
+            "reject_symlinks": False,
+            "max_file_size": 1024,
+            "required_json_fields": ["type", "timestamp"],
+        }
+        cases = {
+            "array.json": '["type", "timestamp"]',
+            "scalar.json": "1",
+            "null.json": "null",
+            "string.json": '"type timestamp"',
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for name, content in cases.items():
+                with self.subTest(name=name):
+                    output = Path(directory) / name
+                    output.write_text(content)
+                    is_valid, reason = self.validator.validate_file(output, rules)
+                    self.assertFalse(is_valid)
+                    self.assertIn("object", reason)
+
+    def test_required_json_fields_accept_complete_object(self):
+        rules = {
+            "reject_symlinks": False,
+            "max_file_size": 1024,
+            "required_json_fields": ["type", "timestamp"],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "ok.json"
+            output.write_text('{"type": "result", "timestamp": "2026-08-18T00:00:00Z"}')
+            is_valid, reason = self.validator.validate_file(output, rules)
+            self.assertTrue(is_valid, reason)
+
     def test_invalid_policy_is_fatal(self):
         with tempfile.TemporaryDirectory() as directory:
             policy = Path(directory) / "rules.json"
