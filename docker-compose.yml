@@ -26,7 +26,10 @@ services:
     volumes:
       - ./inbox:/app/inbox:ro          # Tasks from host (read-only)
       - ./outbox:/app/outbox:rw        # Results from agent (read/write; observed by validator)
-      - ./logs:/app/logs:rw            # Audit trail
+      # Agent-writable log storage, NOT an audit trail: only the agent writes
+      # here, so it can omit, forge, or delete every entry. Squid's own logs
+      # live in a tmpfs and vanish with the container.
+      - ./logs:/app/logs:rw
       - ./agent-state:/app/state:rw    # Persistent agent state
       - ./config/agent.yml:/app/config/agent.yml:ro  # Agent definition
 

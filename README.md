@@ -169,7 +169,7 @@ agent-embassy/
 ├── inbox/                      # Tasks → Agent (read-only for agent)
 ├── outbox/                     # Agent → Host (observed, not gated)
 │   └── rejected/               # Failed validation
-├── logs/                       # Audit trail
+├── logs/                       # Agent-writable log storage (not an audit trail)
 ├── agent-state/                # Persistent agent state
 ├── examples/                   # Example agent configurations
 ├── .env.example                # Environment template
