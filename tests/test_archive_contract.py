@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,12 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
         self.assertIn("./config/validation-rules.json:/app/rules.json:ro", compose)
         self.assertIn("--rules /app/rules.json", compose)
         self.assertNotIn("node /app/agent.js", compose)
+
+    def test_validator_networking_is_disabled_not_empty_list(self):
+        compose = (ROOT / "docker-compose.yml").read_text()
+        empty_networks_key = re.compile(r"^\s*networks:\s*\[\]\s*$", re.MULTILINE)
+        self.assertIsNone(empty_networks_key.search(compose))
+        self.assertIn('network_mode: "none"', compose)
 
     def test_readme_has_scoped_archive_claims_and_no_rate_limit_claim(self):
         readme = (ROOT / "README.md").read_text()

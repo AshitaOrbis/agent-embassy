@@ -86,7 +86,11 @@ services:
       - no-new-privileges:true
     mem_limit: 128M
     cpus: 0.25
-    networks: []
+    # No network: the validator only touches the outbox bind mount. NB an empty
+    # `networks: []` would NOT disable networking — the Compose spec attaches
+    # such a service to the implicit default bridge. network_mode "none" is the
+    # setting that actually disables it.
+    network_mode: "none"
 
 networks:
   embassy-internal:
