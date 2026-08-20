@@ -105,7 +105,25 @@ this does not scan everything the agent writes:
 }
 ```
 
-The validator exits on a missing or malformed policy instead of silently selecting weaker defaults. Rejected files are moved to `outbox/rejected/` with a JSON report explaining why.
+The policy is schema-checked before the validator starts watching. Both mandatory
+keys must be present with these exact JSON types; the three optional keys are
+checked whenever they appear:
+
+| Key | Required | Type | Notes |
+|-----|----------|------|-------|
+| `max_file_size` | yes | number | Whole bytes, `1` .. `1099511627776`; `true` and `"5242880"` are rejected |
+| `reject_symlinks` | yes | boolean | Only `true`/`false`; `null` and `0` are rejected |
+| `blocked_patterns` | no | array of strings | Every entry must compile as a Python regex, checked at startup |
+| `required_json_fields` | no | array of strings | Applied to `.json` outputs |
+| `allowed_extensions` | no | array of strings | Lowercase, leading dot, e.g. `".json"` |
+
+**An optional check is disabled by omitting its key, never by giving it a falsy
+value.** A present-but-empty array, a wrong-typed value, or a misspelled key
+(`blocked_paterns`) is a schema error, not a silently weaker policy. The validator
+prints `POLICY ERROR: ...` naming the offending field and exits `2` before it
+reports itself ready to watch — a missing policy file, unparseable JSON, and a
+non-object root behave the same way. Rejected files are moved to
+`outbox/rejected/` with a JSON report explaining why.
 
 ### Environment Variables (`.env`)
 
