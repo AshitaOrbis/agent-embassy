@@ -265,9 +265,12 @@ def main():
     path = Path(args.path) if args.path else Path("/app/outbox")
     # Fail closed before anything is watched or validated: a policy that is
     # missing, unreadable, not JSON, or off-schema stops the validator here.
+    # ValueError covers PolicySchemaError, json.JSONDecodeError, and the
+    # UnicodeDecodeError a non-text policy file raises; OSError covers missing
+    # and unreadable ones.
     try:
         rules = load_rules(args.rules)
-    except (OSError, json.JSONDecodeError, PolicySchemaError) as exc:
+    except (OSError, ValueError) as exc:
         print(f"POLICY ERROR: {exc}", file=sys.stderr)
         sys.exit(2)
     reject_dir = Path(args.reject_dir) if args.reject_dir else path / "rejected"

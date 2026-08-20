@@ -217,6 +217,23 @@ class ValidatorStartupTests(unittest.TestCase):
         self.assertIn("reject_symlinks", result.stderr)
         self.assertIn("boolean", result.stderr)
 
+    def test_binary_policy_file_refuses_to_start_with_the_same_exit_code(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            policy = workdir / "rules.json"
+            policy.write_bytes(b"\xff\xfe\x00binary")
+            outbox = workdir / "outbox"
+            outbox.mkdir()
+            result = subprocess.run(
+                [sys.executable, str(VALIDATOR_PATH), str(outbox), "--watch",
+                 "--rules", str(policy)],
+                capture_output=True, text=True, timeout=30,
+            )
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertNotIn("Watching", result.stdout)
+        self.assertIn("POLICY ERROR", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_missing_and_unparseable_policies_also_refuse_to_start(self):
         for label, policy_text in (
             ("not json", "{not valid json"),
@@ -324,7 +341,8 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
 
     def test_readme_documents_the_bind_mount_ownership_prerequisite(self):
         readme = (ROOT / "README.md").read_text()
-        self.assertIn("must be writable by the\n> configured container UID/GID", readme)
+        self.assertIn("configured container UID/GID", readme)
+        self.assertIn("only needs to be readable", readme)
         self.assertIn("sudo chown -R 1000:1000 outbox logs agent-state", readme)
         self.assertIn("setfacl", readme)
         self.assertIn("EACCES", readme)
