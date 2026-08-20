@@ -54,15 +54,45 @@ cp .env.example .env
 # 3. Create directories
 mkdir -p inbox outbox logs agent-state
 
-# 4. Run
+# 4. Make the writable mounts writable by the container UID/GID (see below)
+sudo chown -R 1000:1000 outbox logs agent-state
+
+# 5. Run
 docker compose up -d
 
-# 5. Submit a task
+# 6. Submit a task
 echo '{"type": "task", "prompt": "Hello, agent"}' > inbox/task-001.json
 
-# 6. Check results
+# 7. Check results
 ls outbox/
 ```
+
+> **Prerequisite: `outbox`, `logs`, and `agent-state` must be writable by the
+> configured container UID/GID.** `docker-compose.yml` runs both the agent and
+> the validator as `1000:1000`. On a checkout owned by any other UID under a
+> normal `022` umask those directories are mode `0755` and owned by you, so both
+> containers get `EACCES` — the agent writes no results, logs, or state, and the
+> validator cannot create `outbox/rejected/` or quarantine a file. `docker
+> compose up -d` still reports success, so the failure is silent. `inbox` is
+> mounted read-only and only needs to be readable.
+>
+> Step 4 above takes the first of three options:
+>
+> ```bash
+> # A. Give the container identity ownership of the writable mounts
+> sudo chown -R 1000:1000 outbox logs agent-state
+>
+> # B. Or keep your ownership and grant UID 1000 access with an ACL
+> sudo setfacl -R -m u:1000:rwX outbox logs agent-state
+> sudo setfacl -d -m u:1000:rwx outbox logs agent-state   # new files inherit it
+>
+> # C. Or run the containers as yourself: replace every 1000 in
+> #    docker-compose.yml — the two `user:` lines and the agent `tmpfs`
+> #    uid=/gid= options — with `id -u` and `id -g`
+> ```
+>
+> If you already ran `docker compose up -d` before fixing ownership, apply one of
+> the above and restart: `docker compose down && docker compose up -d`.
 
 ## Configuration
 
@@ -129,7 +159,7 @@ non-object root behave the same way. Rejected files are moved to
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AGENT_IMAGE` | Required | Docker image that already contains your agent program. Compose forces UID/GID 1000 and sets `HOME=/home/node` (a leftover of the removed Node default): the image must run as UID 1000 with a read-only or absent `/home/node`, or you must adapt those fields in `docker-compose.yml` |
+| `AGENT_IMAGE` | Required | Docker image that already contains your agent program. Compose forces UID/GID 1000 and sets `HOME=/home/node` (a leftover of the removed Node default): the image must run as UID 1000 with a read-only or absent `/home/node`, or you must adapt those fields in `docker-compose.yml`. The host `outbox`, `logs`, and `agent-state` directories must be writable by that same UID/GID — see the Quick Start prerequisite |
 | `AGENT_COMMAND` | Required | Entrypoint present inside `AGENT_IMAGE` |
 | `AGENT_MEM_LIMIT` | `2G` | Memory limit |
 | `AGENT_CPUS` | `2` | CPU limit |

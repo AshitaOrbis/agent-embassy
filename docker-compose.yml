@@ -7,7 +7,10 @@ services:
 
     # SECURITY: Run as non-root user. This OVERRIDES the image's own user:
     # AGENT_IMAGE must work when run as UID/GID 1000 (adjust here if yours
-    # requires a different non-root UID).
+    # requires a different non-root UID). The host directories bound below at
+    # /app/outbox, /app/logs, and /app/state must be writable by this same
+    # UID/GID or every write fails with EACCES while Compose still reports the
+    # stack as up — see the Quick Start prerequisite in README.md.
     user: "1000:1000"
 
     # SECURITY: Read-only rootfs with tmpfs for writable paths
@@ -92,6 +95,8 @@ services:
       - ./scripts/validate_outbox.py:/app/validate.py:ro
       - ./config/validation-rules.json:/app/rules.json:ro
     command: python /app/validate.py --watch /app/outbox --rules /app/rules.json
+    # ./outbox must be writable by this UID/GID too: the validator creates
+    # outbox/rejected/ and moves files into it (README.md Quick Start).
     user: "1000:1000"
     cap_drop:
       - ALL

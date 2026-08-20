@@ -322,6 +322,15 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
         self.assertNotIn("resources:", agent_config)
         self.assertNotIn("validation:", agent_config)
 
+    def test_readme_documents_the_bind_mount_ownership_prerequisite(self):
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn("must be writable by the\n> configured container UID/GID", readme)
+        self.assertIn("sudo chown -R 1000:1000 outbox logs agent-state", readme)
+        self.assertIn("setfacl", readme)
+        self.assertIn("EACCES", readme)
+        compose = (ROOT / "docker-compose.yml").read_text()
+        self.assertIn("must be writable by this same", compose)
+
     def test_readme_documents_the_enforced_policy_schema(self):
         readme = (ROOT / "README.md").read_text()
         self.assertIn("schema-checked before the validator starts watching", readme)
