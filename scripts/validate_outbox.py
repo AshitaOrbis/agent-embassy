@@ -123,6 +123,19 @@ def validate_policy(rules: dict, rules_path: str = "<policy>") -> dict:
                     f"{rules_path}: blocked_patterns[{index}] is not a valid regular "
                     f"expression ({exc}): {pattern!r}"
                 ) from exc
+            except (OverflowError, RecursionError, MemoryError) as exc:
+                # re.error is NOT the only way compilation fails. The compiler's own
+                # limits raise plain builtins that are not re.error and are not caught
+                # by main()'s (OSError, ValueError) handler either, so they escaped
+                # BOTH boundaries: `a{4294967296}` raised OverflowError and a
+                # 1000-deep nested group raised RecursionError, each producing a
+                # traceback and exit 1 instead of the documented POLICY ERROR / exit 2.
+                # Reproduced on CPython 3.12 (2026-09-05). Same disposition as an
+                # invalid pattern: the policy cannot be honoured, so refuse it by name.
+                raise PolicySchemaError(
+                    f"{rules_path}: blocked_patterns[{index}] exceeds the regular-expression "
+                    f"compiler's limits ({type(exc).__name__}: {exc}): {pattern!r}"
+                ) from exc
         normalized["blocked_patterns"] = compiled
 
     if "required_json_fields" in rules:

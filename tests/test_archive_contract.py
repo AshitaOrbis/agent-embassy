@@ -372,5 +372,66 @@ class ArchivedDocumentationContractTests(unittest.TestCase):
                 self.assertNotIn("rate_limit", path.read_text())
 
 
+
+class RegexCompilerLimitsTest(unittest.TestCase):
+    """A policy the regex compiler REFUSES must still fail the documented way.
+
+    agent-policy_regex_diagnostic_02 (Astra Pro dive 2026-09-05): the compiler
+    boundary caught only `re.error`, and main() catches only (OSError, ValueError),
+    so the compiler's own limit failures — plain builtins, not re.error — escaped
+    BOTH handlers and produced a traceback with exit 1 instead of the documented
+    "POLICY ERROR: ... exit 2" contract in README.md. Reproduced on CPython 3.12:
+    a{4294967296} raised OverflowError, and 1000 nested groups raised RecursionError.
+    """
+
+    def _run(self, pattern):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            outbox = tmp / "outbox"
+            outbox.mkdir()
+            rules = tmp / "policy.json"
+            rules.write_text(json.dumps({
+                "max_file_size": 1024,
+                "reject_symlinks": True,
+                "blocked_patterns": [pattern],
+            }))
+            return subprocess.run(
+                [sys.executable, str(VALIDATOR_PATH), "--watch", "--rules", str(rules), str(outbox)],
+                capture_output=True, text=True, timeout=120,
+            )
+
+    def test_repetition_count_overflow_is_a_policy_error(self):
+        r = self._run("a{4294967296}")
+        self.assertEqual(r.returncode, 2, r.stderr[-400:])
+        self.assertIn("POLICY ERROR", r.stderr)
+        self.assertIn("blocked_patterns[0]", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_deeply_nested_group_is_a_policy_error(self):
+        r = self._run("(" * 1000 + "a" + ")" * 1000)
+        self.assertEqual(r.returncode, 2, r.stderr[-400:])
+        self.assertIn("POLICY ERROR", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_an_ordinary_invalid_pattern_still_reports_the_same_way(self):
+        """Control: the case that already worked must keep working."""
+        r = self._run("a[")
+        self.assertEqual(r.returncode, 2, r.stderr[-400:])
+        self.assertIn("POLICY ERROR", r.stderr)
+        self.assertIn("not a valid regular expression", r.stderr)
+
+    def test_a_compilable_pattern_is_still_accepted(self):
+        """Control: a valid policy must not be refused by the new handler."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            rules = tmp / "policy.json"
+            rules.write_text(json.dumps({
+                "max_file_size": 1024, "reject_symlinks": True,
+                "blocked_patterns": ["secret[0-9]+"],
+            }))
+            module = load_validator()
+            loaded = module.load_rules(str(rules))
+            self.assertEqual(len(loaded["blocked_patterns"]), 1)
+
 if __name__ == "__main__":
     unittest.main()

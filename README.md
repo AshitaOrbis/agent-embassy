@@ -93,6 +93,31 @@ ls outbox/
 >
 > If you already ran `docker compose up -d` before fixing ownership, apply one of
 > the above and restart: `docker compose down && docker compose up -d`.
+>
+> **These three recipes assume rootful Docker with no UID/GID remapping.** They
+> are stated in raw numbers, and a container UID is only the same as a host UID
+> when nothing is translating between them. Under **rootless Docker** or a
+> **`userns-remap` daemon** it is not: with a subordinate range starting at
+> `231072`, container `1000:1000` is host `232071:232071`, so `chown 1000:1000`
+> and `setfacl -m u:1000` both grant the wrong identity and the mounts stay
+> unwritable. The failure looks the same as the one above — `docker compose up
+> -d` succeeds, the validator prints `Watching`, and it then dies with
+> `PermissionError` the first time it tries to quarantine a file.
+>
+> On such a host, resolve the mapping first and grant the **mapped** identity:
+>
+> ```bash
+> # what the daemon is actually doing
+> docker info --format '{{.SecurityOptions}}'   # look for name=userns
+> cat /etc/subuid /etc/subgid                   # your subordinate ranges
+>
+> # the host identity that container 1000:1000 really is
+> docker run --rm -v "$PWD/outbox:/probe" alpine sh -c 'touch /probe/.wtest && echo writable'
+> ```
+>
+> Then chown to that mapped host UID/GID rather than to `1000`, and **verify with
+> a write and a quarantine from the configured containers** rather than from your
+> own shell — a directory your login can write is not evidence the container can.
 
 ## Configuration
 
@@ -151,8 +176,12 @@ checked whenever they appear:
 value.** A present-but-empty array, a wrong-typed value, or a misspelled key
 (`blocked_paterns`) is a schema error, not a silently weaker policy. The validator
 prints `POLICY ERROR: ...` naming the offending field and exits `2` before it
-reports itself ready to watch — a missing policy file, unparseable JSON, and a
-non-object root behave the same way. Rejected files are moved to
+reports itself ready to watch — a missing policy file, unparseable JSON, a
+non-object root, and a `blocked_patterns` entry the regex compiler refuses all
+behave the same way. That last case includes the compiler's own limits, not only
+malformed syntax: an oversized repetition count (`a{4294967296}`) or a deeply
+nested group raises `OverflowError` or `RecursionError` rather than `re.error`,
+and both are now reported as the same named policy error with exit `2`. Rejected files are moved to
 `outbox/rejected/` with a JSON report explaining why.
 
 ### Environment Variables (`.env`)
