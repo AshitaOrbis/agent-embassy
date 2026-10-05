@@ -97,27 +97,67 @@ ls outbox/
 > **These three recipes assume rootful Docker with no UID/GID remapping.** They
 > are stated in raw numbers, and a container UID is only the same as a host UID
 > when nothing is translating between them. Under **rootless Docker** or a
-> **`userns-remap` daemon** it is not: with a subordinate range starting at
-> `231072`, container `1000:1000` is host `232071:232071`, so `chown 1000:1000`
-> and `setfacl -m u:1000` both grant the wrong identity and the mounts stay
-> unwritable. The failure looks the same as the one above — `docker compose up
-> -d` succeeds, the validator prints `Watching`, and it then dies with
-> `PermissionError` the first time it tries to quarantine a file.
+> **`userns-remap` daemon** it is not, and the two modes translate differently.
+> With subordinate UID and GID ranges both starting at `231072`:
 >
-> On such a host, resolve the mapping first and grant the **mapped** identity:
+> - **rootful `userns-remap`**: host ID = range start + container ID, so
+>   container `1000:1000` is host `232072:232072` (the range is the remap
+>   user's, `dockremap` by default);
+> - **rootless Docker**: container root is your login user and container ID
+>   *n* ≥ 1 is range start + *n* − 1, so container `1000:1000` is host
+>   `232071:232071` (the range is your login's).
+>
+> Either way `chown 1000:1000` and `setfacl -m u:1000` grant the wrong identity
+> and the mounts stay unwritable. The failure looks the same as the one above —
+> `docker compose up -d` succeeds, the validator prints `Watching`, and it then
+> dies with `PermissionError` the first time it tries to quarantine a file.
+>
+> Those two formulas are derived from Docker's documentation, and this section
+> has **not been run against a rootless or `userns-remap` daemon**; the commands
+> below are written against this repository's `docker-compose.yml` and have not
+> been run. So do not compute the owner: ask the configured service. Run these
+> from the checkout, on the Docker host:
 >
 > ```bash
-> # what the daemon is actually doing
-> docker info --format '{{.SecurityOptions}}'   # look for name=userns
-> cat /etc/subuid /etc/subgid                   # your subordinate ranges
+> docker info --format '{{.SecurityOptions}}'   # name=rootless or name=userns
 >
-> # the host identity that container 1000:1000 really is
-> docker run --rm -v "$PWD/outbox:/probe" alpine sh -c 'touch /probe/.wtest && echo writable'
+> # The configured validator, as its configured 1000:1000, creates a file in a
+> # new, empty scratch directory; the file's numeric owner on the host is the
+> # mapped identity. (g-s keeps an inherited setgid bit from overriding the GID.)
+> probe=$(mktemp -d "$PWD/uid-probe.XXXXXX") &&
+>   chmod 1777 "$probe" && chmod g-s "$probe" &&
+>   docker compose run --rm --no-deps -v "$probe:/probe" validator \
+>     python -c 'import os; open("/probe/f", "w").close(); print("container", os.getuid(), os.getgid())' &&
+>   stat -c 'host %u:%g' "$probe/f"
+> [ -n "$probe" ] && rm -rf "$probe"
 > ```
 >
-> Then chown to that mapped host UID/GID rather than to `1000`, and **verify with
-> a write and a quarantine from the configured containers** rather than from your
-> own shell — a directory your login can write is not evidence the container can.
+> Grant that host pair in place of `1000:1000` in option A, and its UID in place
+> of `1000` in both `setfacl` lines of option B. (Option C does not carry over:
+> under remapping your own `id -u` inside a container is not you on the host.)
+> The agent runs as the same `1000:1000` on the same daemon, so it
+> should map to the same pair; that is inferred, not probed, because the agent
+> image is yours and may not contain Python.
+>
+> Then **verify with a real write and a real quarantine from the configured
+> containers**, not from your own shell — a directory your login can write is not
+> evidence the container can. The `.bin` file is outside the shipped
+> `allowed_extensions`, so the running validator must move it to
+> `outbox/rejected/` and write a report beside it:
+>
+> ```bash
+> docker compose up -d
+> docker compose run --rm --no-deps \
+>   -v "$PWD/logs:/w/logs" -v "$PWD/agent-state:/w/state" validator sh -c '
+>     for d in /w/logs /w/state; do touch "$d/.write-check" && rm "$d/.write-check" || exit 1; done
+>     printf x > /app/outbox/ownership-check.bin && echo writes-ok'
+> sleep 5
+> ls outbox/rejected/   # success: ownership-check.bin and ownership-check.rejection.json
+> # Diagnostics only: a PermissionError traceback here means the grant is still
+> # wrong. Python buffers the validator's stdout, so a REJECTED line may lag.
+> docker compose logs validator | tail -n 20
+> docker compose run --rm --no-deps validator sh -c 'rm /app/outbox/rejected/ownership-check.*'
+> ```
 
 ## Configuration
 
