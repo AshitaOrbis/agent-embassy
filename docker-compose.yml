@@ -38,8 +38,8 @@ services:
       - ./agent-state:/app/state:rw    # Persistent agent state
       - ./config/agent.yml:/app/config/agent.yml:ro  # Agent definition
 
-    # Required: the selected image must already contain this entrypoint
-    command: ${AGENT_COMMAND:?Set AGENT_COMMAND in .env to an entrypoint present in AGENT_IMAGE}
+    # Overrides image CMD; an existing ENTRYPOINT still receives these arguments
+    command: ${AGENT_COMMAND:?Set AGENT_COMMAND in .env to the image CMD or ENTRYPOINT arguments}
 
     environment:
       # Leftover from the removed Node default: this path may not exist in your

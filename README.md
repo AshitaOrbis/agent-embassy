@@ -2,7 +2,7 @@
 
 > **Note: This project is archived.** The embassy pattern demonstrated several useful hardening layers (Docker isolation, an egress proxy, and output validation), but those layers do not form a containment primitive or complete agent sandbox. See the [post-mortem blog series](https://ashitaorbis.com/posts/033-the-container-that-forgot-to-stop) for what we learned. For active alternatives, see [Docker AI Sandboxes](https://docs.docker.com/ai/sandbox/) and [AISI Sandboxing](https://github.com/UKGovernmentBEIS/aisi-sandboxing).
 
-Archived Docker Compose **hardening template** for running AI agents you broadly trust. Supply an agent image and its real entrypoint, then configure the operative controls directly. It applies defense-in-depth (egress allowlist, dropped capabilities, read-only root filesystem, resource limits, and best-effort output validation).
+Archived Docker Compose **hardening template** for running AI agents you broadly trust. Supply an agent image and compatible command arguments, then configure the operative controls directly. It applies defense-in-depth (egress allowlist, dropped capabilities, read-only root filesystem, resource limits, and best-effort output validation).
 
 > **Not a containment boundary for actively malicious code.** This is layered hardening on ordinary Docker isolation, not a security sandbox. An adversarial agent has documented paths to defeat it: DNS-based egress can bypass the proxy on some Docker/Moby versions; the output validator observes files rather than gating them (symlink/path-traversal/validate-then-mutate/fail-open bypasses exist); and writable host bind mounts are reachable outside the "controlled" channel. For untrusted or potentially-compromised agents use a real isolation layer (gVisor, Firecracker/Kata, or a network-firewalled VM). Treat this repo as a starting pattern to harden, not a guarantee.
 
@@ -38,6 +38,27 @@ AI agents need internet access to be useful but unrestricted access is dangerous
 
 ## Quick Start
 
+The detached workflow below requires a **persistent, inbox-aware worker** already
+implemented in your image. Compose provides mounts and a command, but **no
+task-processing adapter**. Your worker must:
+
+- Poll `/app/inbox` and parse your task format. The `task-001.json` example below
+  assumes it understands a JSON object with `type: "task"` and a `prompt` string;
+  the template implements no task schema or polling loop.
+- Deduplicate tasks using a stable identity, such as the filename, and durably
+  record completed task IDs in `/app/state`. The inbox is read-only: the worker
+  cannot delete or move tasks to acknowledge them. It must skip completed tasks
+  after polling again or restarting. Recovery from a crash during an API call
+  also needs an application-specific retry/idempotency policy to avoid duplicate charges.
+- Write results to `/app/outbox` that satisfy `config/validation-rules.json`.
+  With the shipped policy, JSON results need `type` and `timestamp` fields.
+  Write a hidden temporary file there and rename it to a unique, non-hidden
+  top-level result filename when complete; the validator remains observational.
+
+The service uses `restart: unless-stopped`, which restarts even after a successful
+exit and can repeat paid API work. Use the separate one-shot flow below for a
+program that finishes and exits.
+
 ```bash
 # 1. Clone
 git clone https://github.com/AshitaOrbis/agent-embassy.git
@@ -46,7 +67,7 @@ cd agent-embassy
 # 2. Configure
 cp .env.example .env
 # Set AGENT_IMAGE to an image that already contains your agent program
-# Set AGENT_COMMAND to that program's entrypoint inside the image
+# Set AGENT_COMMAND to the image's CMD override (command or ENTRYPOINT arguments)
 # Edit config/squid.conf to allowlist your agent's API endpoints
 # Edit config/validation-rules.json for observational output checks
 # config/agent.yml is optional metadata for the agent itself; Compose ignores it
@@ -66,6 +87,24 @@ echo '{"type": "task", "prompt": "Hello, agent"}' > inbox/task-001.json
 # 7. Check results
 ls outbox/
 ```
+
+### One-shot program
+
+After steps 1–4, configure `AGENT_COMMAND` for a single invocation supported by
+your image. It must explicitly read any task file it needs and write its results;
+dropping a file into the inbox alone does not invoke a program. If you previously
+started the detached worker, stop it before running the one-shot:
+
+```bash
+docker compose stop agent
+docker compose up -d egress-proxy validator
+docker compose run --rm --no-deps agent
+```
+
+`--rm` overrides the service restart policy for this foreground run and removes
+its container on exit. `--no-deps` uses the proxy already started above. The proxy
+and validator remain running; this does not provide task deduplication or API
+retry safety for the supplied program.
 
 > **Prerequisite: `outbox`, `logs`, and `agent-state` must be writable by the
 > configured container UID/GID.** `docker-compose.yml` runs both the agent and
@@ -229,10 +268,24 @@ and both are now reported as the same named policy error with exit `2`. Rejected
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AGENT_IMAGE` | Required | Docker image that already contains your agent program. Compose forces UID/GID 1000 and sets `HOME=/home/node` (a leftover of the removed Node default): the image must run as UID 1000 with a read-only or absent `/home/node`, or you must adapt those fields in `docker-compose.yml`. The host `outbox`, `logs`, and `agent-state` directories must be writable by that same UID/GID — see the Quick Start prerequisite |
-| `AGENT_COMMAND` | Required | Entrypoint present inside `AGENT_IMAGE` |
+| `AGENT_COMMAND` | Required | CMD/argument override for `AGENT_IMAGE`; an existing ENTRYPOINT remains in effect (see below) |
 | `AGENT_MEM_LIMIT` | `2G` | Memory limit |
 | `AGENT_CPUS` | `2` | CPU limit |
 | `AGENT_PIDS_LIMIT` | `100` | Process limit (prevents fork bombs) |
+
+`AGENT_COMMAND` sets Compose `command:`, which replaces the image's `CMD`.
+It does not replace an existing `ENTRYPOINT`. For example, if your image declares
+the exec-form `ENTRYPOINT ["/opt/agent/worker"]` and that worker implements the
+flags and persistent worker contract described above, supply only its arguments:
+
+```bash
+AGENT_COMMAND='--inbox /app/inbox --outbox /app/outbox --state /app/state'
+```
+
+This runs `/opt/agent/worker` followed by those flags; repeating the executable
+in `AGENT_COMMAND` would pass it as an extra argument.
+For an image with no `ENTRYPOINT`, supply the executable plus its arguments
+in `AGENT_COMMAND`.
 
 **Credential injection is not implemented by this template.** Compose defines no
 Docker secrets and mounts no credentials path into the agent container. If your
@@ -269,10 +322,10 @@ A determined or compromised agent can defeat each of these — see the top-of-RE
 
 ## Examples
 
-See the `examples/` directory for metadata and reference Squid policies. Nothing under `examples/` is read by Compose — to use an example egress policy, copy it over `config/squid.conf` before starting (e.g. `cp examples/openai-agent/squid.conf config/squid.conf`):
+See the `examples/` directory for metadata and reference Squid policies, not runnable agents or workers. Nothing under `examples/` is read by Compose — to use an example egress policy, copy it over `config/squid.conf` before starting (e.g. `cp examples/openai-agent/squid.conf config/squid.conf`):
 
-- `examples/openai-agent/` - Agent that calls OpenAI API
-- `examples/web-scraper/` - Agent that scrapes allowlisted sites
+- `examples/openai-agent/` - Metadata for an agent that calls the OpenAI API
+- `examples/web-scraper/` - Metadata for an agent that scrapes allowlisted sites
 
 ## Project Structure
 
