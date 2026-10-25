@@ -184,18 +184,41 @@ retry safety for the supplied program.
 > `allowed_extensions`, so the running validator must move it to
 > `outbox/rejected/` and write a report beside it:
 >
+> Run this whole block in Bash. It refuses existing probe entries, including
+> dangling symlinks, so an interrupted earlier check cannot supply the evidence.
+> `writes-ok` confirms writes only; success also requires the current source to
+> disappear and both new quarantine artifacts to be regular files, not symlinks.
+> Keep the artifacts for inspection; use a separate disposable checkout to retry
+> without removing prior evidence. This remains an observational check.
+>
 > ```bash
-> docker compose up -d
-> docker compose run --rm --no-deps \
->   -v "$PWD/logs:/w/logs" -v "$PWD/agent-state:/w/state" validator sh -c '
->     for d in /w/logs /w/state; do touch "$d/.write-check" && rm "$d/.write-check" || exit 1; done
->     printf x > /app/outbox/ownership-check.bin && echo writes-ok'
-> sleep 5
-> ls outbox/rejected/   # success: ownership-check.bin and ownership-check.rejection.json
-> # Diagnostics only: a PermissionError traceback here means the grant is still
-> # wrong. Python buffers the validator's stdout, so a REJECTED line may lag.
-> docker compose logs validator | tail -n 20
-> docker compose run --rm --no-deps validator sh -c 'rm /app/outbox/rejected/ownership-check.*'
+> (
+>   set -euo pipefail
+>   for probe_path in outbox/ownership-check.bin \
+>     outbox/rejected/ownership-check.bin outbox/rejected/ownership-check.rejection.json; do
+>     if [ -e "$probe_path" ] || [ -L "$probe_path" ]; then
+>       printf 'Probe path already exists; preserve and inspect it: %s\n' "$probe_path" >&2
+>       exit 1
+>     fi
+>   done
+>   docker compose up -d
+>   docker compose run --rm --no-deps \
+>     -v "$PWD/logs:/w/logs" -v "$PWD/agent-state:/w/state" validator sh -c '
+>       for d in /w/logs /w/state; do touch "$d/.write-check" && rm "$d/.write-check" || exit 1; done
+>       printf x > /app/outbox/ownership-check.bin && echo writes-ok'
+>   sleep 5
+>   if [ -e outbox/ownership-check.bin ] || [ -L outbox/ownership-check.bin ] ||
+>     [ ! -f outbox/rejected/ownership-check.bin ] || [ -L outbox/rejected/ownership-check.bin ] ||
+>     [ ! -f outbox/rejected/ownership-check.rejection.json ] || [ -L outbox/rejected/ownership-check.rejection.json ]; then
+>     printf 'Quarantine not confirmed for this attempt; retain the probe and inspect the logs.\n' >&2
+>     docker compose logs validator | tail -n 20
+>     exit 1
+>   fi
+>   # A PermissionError means the grant is still wrong. Python buffers stdout,
+>   # so a REJECTED line may lag; the filesystem checks above are required.
+>   docker compose logs validator | tail -n 20
+>   printf 'Fresh quarantine observed: ownership-check.bin and ownership-check.rejection.json\n'
+> )
 > ```
 
 ## Configuration

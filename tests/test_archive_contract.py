@@ -433,5 +433,210 @@ class RegexCompilerLimitsTest(unittest.TestCase):
             loaded = module.load_rules(str(rules))
             self.assertEqual(len(loaded["blocked_patterns"]), 1)
 
+
+
+class OwnershipQuarantineRecipeTests(unittest.TestCase):
+    """Execute the documented shell with offline Compose/sleep substitutes.
+
+    The substitutes run the actual shell write command and actual validator scan
+    in synthetic directories. They do not exercise Docker, UID maps or a watcher.
+    """
+
+    def setUp(self):
+        self.prepare_fixture()
+
+    def prepare_fixture(self):
+        self.storage = tempfile.TemporaryDirectory(prefix="embassy recipe ")
+        self.addCleanup(self.storage.cleanup)
+        self.work = Path(self.storage.name)
+        for name in ("bin", "home", "tmp", "outbox/rejected", "logs", "agent-state"):
+            (self.work / name).mkdir(parents=True)
+        section = (ROOT / "README.md").read_text().split(
+            "Then **verify with a real write and a real quarantine", 1
+        )[1].split("\n## Configuration", 1)[0]
+        match = re.search(r"(?ms)^> ```bash\n(.*?)^> ```", section)
+        self.assertIsNotNone(match, "ownership recipe must remain an executable Bash fence")
+        self.recipe = "\n".join(
+            line[2:] if line.startswith("> ") else line[1:]
+            for line in match.group(1).splitlines()
+        )
+        shim = r'''import importlib.util
+import json
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+
+root = Path(__file__).resolve().parents[1]
+mode = (root / "mode").read_text()
+with (root / "calls.txt").open("a") as log:
+    log.write(Path(sys.argv[0]).name + " " + " ".join(sys.argv[1:3]) + "\n")
+child_env = {
+    "HOME": str(root / "home"), "PATH": "/usr/bin:/bin",
+    "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8",
+    "TMPDIR": str(root / "tmp"), "PYTHONDONTWRITEBYTECODE": "1",
+}
+if Path(sys.argv[0]).name == "docker":
+    args = sys.argv[1:]
+    if args == ["compose", "up", "-d"]:
+        sys.exit(7 if mode == "startup-failure" else 0)
+    if args == ["compose", "logs", "validator"]:
+        print("synthetic validator diagnostics")
+        sys.exit(0)
+    if args[:2] != ["compose", "run"] or args[-3:-1] != ["sh", "-c"]:
+        raise SystemExit("unexpected offline Docker invocation")
+    if mode == "write-failure":
+        sys.exit(9)
+    command = args[-1]
+    for inside, outside in [
+        ("/app/outbox", root / "outbox"),
+        ("/w/logs", root / "logs"),
+        ("/w/state", root / "agent-state"),
+    ]:
+        command = command.replace(inside, shlex.quote(str(outside)))
+    assert "/app/" not in command and "/w/" not in command
+    result = subprocess.run(["/bin/sh", "-c", command], cwd=root,
+                            env=child_env, timeout=5)
+    sys.exit(result.returncode)
+
+assert Path(sys.argv[0]).name == "sleep" and sys.argv[1:] == ["5"]
+source = root / "outbox/ownership-check.bin"
+payload = root / "outbox/rejected/ownership-check.bin"
+report = root / "outbox/rejected/ownership-check.rejection.json"
+if mode == "normal":
+    spec = importlib.util.spec_from_file_location("recipe_validator", __VALIDATOR__)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rules = module.load_rules(__POLICY__)
+    module.scan_once(root / "outbox", rules, root / "outbox/rejected")
+elif mode == "policy-invalid":
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", __VALIDATOR__, str(root / "outbox"),
+         "--watch", "--rules", str(root / "bad-policy.json")],
+        cwd=root, env=child_env, capture_output=True, timeout=5,
+    )
+    assert result.returncode == 2 and b"POLICY ERROR" in result.stderr
+elif mode == "payload-only":
+    shutil.move(source, payload)
+elif mode in ("report-only", "source-remains", "payload-link", "report-link"):
+    report.write_text(json.dumps({"file": source.name, "reason": "synthetic"}))
+    if mode != "report-only":
+        shutil.copyfile(source, payload)
+    if mode != "source-remains":
+        source.unlink()
+    if mode == "payload-link":
+        payload.unlink()
+        payload.symlink_to(root / "witness")
+    if mode == "report-link":
+        report.unlink()
+        report.symlink_to(root / "witness")
+else:
+    assert mode == "inactive", mode
+'''
+        shim = shim.replace("__VALIDATOR__", repr(str(VALIDATOR_PATH)))
+        shim = shim.replace("__POLICY__", repr(str(ROOT / "config/validation-rules.json")))
+        for name in ("docker", "sleep"):
+            command = self.work / "bin" / name
+            command.write_text("#!" + sys.executable + " -B\n" + shim)
+            command.chmod(0o700)
+        (self.work / "witness").write_bytes(b"synthetic witness")
+        (self.work / "bad-policy.json").write_text("{}")
+
+    def run_recipe(self, mode):
+        (self.work / "mode").write_text(mode)
+        return subprocess.run(
+            ["/bin/bash", "--noprofile", "--norc", "-c", self.recipe],
+            cwd=self.work, env={
+                "HOME": str(self.work / "home"),
+                "PATH": str(self.work / "bin") + ":/usr/bin:/bin",
+                "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8",
+                "TMPDIR": str(self.work / "tmp"), "PYTHONDONTWRITEBYTECODE": "1",
+            }, capture_output=True, text=True, timeout=10,
+        )
+
+    def test_stale_probe_entries_refuse_before_starting_and_preserve_evidence(self):
+        for relative in ("outbox/ownership-check.bin",
+                         "outbox/rejected/ownership-check.bin",
+                         "outbox/rejected/ownership-check.rejection.json"):
+            for kind in ("file", "directory", "link", "dangling-link"):
+                with self.subTest(path=relative, kind=kind):
+                    self.prepare_fixture()
+                    path = self.work / relative
+                    if kind == "file":
+                        path.write_bytes(b"previous synthetic evidence")
+                    elif kind == "directory":
+                        path.mkdir()
+                    else:
+                        path.symlink_to(self.work / ("witness" if kind == "link" else "absent"))
+                    result = self.run_recipe("inactive")
+                    self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+                    self.assertFalse((self.work / "calls.txt").exists(), "preflight must precede Docker")
+                    if kind == "file":
+                        self.assertEqual(b"previous synthetic evidence", path.read_bytes())
+                    elif kind == "directory":
+                        self.assertTrue(path.is_dir())
+                    else:
+                        self.assertTrue(path.is_symlink())
+                        self.assertEqual(self.work / ("witness" if kind == "link" else "absent"), path.readlink())
+                    if kind == "directory":
+                        path.rmdir()
+                    else:
+                        path.unlink()
+
+    def test_fresh_scan_succeeds_with_current_payload_and_associated_report(self):
+        sentinel = self.work / "outbox/rejected/ownership-check.keep"
+        sentinel.write_bytes(b"keep unrelated evidence")
+        result = self.run_recipe("normal")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("Fresh quarantine observed", result.stdout)
+        self.assertFalse((self.work / "outbox/ownership-check.bin").exists())
+        self.assertEqual(b"x", (self.work / "outbox/rejected/ownership-check.bin").read_bytes())
+        report = json.loads((self.work / "outbox/rejected/ownership-check.rejection.json").read_text())
+        self.assertEqual("ownership-check.bin", report["file"])
+        self.assertIn("Disallowed extension", report["reason"])
+        self.assertEqual(b"keep unrelated evidence", sentinel.read_bytes())
+
+    def test_inactive_validator_does_not_turn_successful_writes_into_quarantine_success(self):
+        result = self.run_recipe("inactive")
+        self.assertIn("writes-ok", result.stdout)
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertNotIn("Fresh quarantine observed", result.stdout)
+        self.assertEqual(b"x", (self.work / "outbox/ownership-check.bin").read_bytes())
+
+    def test_invalid_policy_does_not_turn_successful_writes_into_quarantine_success(self):
+        result = self.run_recipe("policy-invalid")
+        self.assertIn("writes-ok", result.stdout)
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertNotIn("Fresh quarantine observed", result.stdout)
+        self.assertTrue((self.work / "outbox/ownership-check.bin").exists())
+
+    def test_partial_quarantine_symlink_artifacts_and_remaining_source_cannot_pass(self):
+        for mode in ("payload-only", "report-only", "source-remains", "payload-link", "report-link"):
+            with self.subTest(mode=mode):
+                self.prepare_fixture()
+                result = self.run_recipe(mode)
+                self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertNotIn("Fresh quarantine observed", result.stdout)
+                self.assertEqual(b"synthetic witness", (self.work / "witness").read_bytes())
+                for relative in ("outbox/ownership-check.bin", "outbox/rejected/ownership-check.bin",
+                                 "outbox/rejected/ownership-check.rejection.json"):
+                    path = self.work / relative
+                    if path.is_symlink() or path.exists():
+                        path.unlink()
+
+    def test_failed_startup_stops_before_the_write_command(self):
+        result = self.run_recipe("startup-failure")
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("docker compose up\n", (self.work / "calls.txt").read_text())
+        self.assertFalse((self.work / "outbox/ownership-check.bin").exists())
+
+    def test_failed_write_cannot_be_reported_as_success(self):
+        result = self.run_recipe("write-failure")
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertNotIn("Fresh quarantine observed", result.stdout)
+        self.assertNotIn("sleep", (self.work / "calls.txt").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
