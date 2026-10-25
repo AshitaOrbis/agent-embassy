@@ -479,7 +479,7 @@ child_env = {
 }
 if Path(sys.argv[0]).name == "docker":
     args = sys.argv[1:]
-    if args == ["compose", "up", "-d"]:
+    if args == ["compose", "up", "-d", "validator"]:
         sys.exit(7 if mode == "startup-failure" else 0)
     if args == ["compose", "logs", "validator"]:
         print("synthetic validator diagnostics")

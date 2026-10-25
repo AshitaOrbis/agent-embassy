@@ -201,7 +201,7 @@ retry safety for the supplied program.
 >       exit 1
 >     fi
 >   done
->   docker compose up -d
+>   docker compose up -d validator
 >   docker compose run --rm --no-deps \
 >     -v "$PWD/logs:/w/logs" -v "$PWD/agent-state:/w/state" validator sh -c '
 >       for d in /w/logs /w/state; do touch "$d/.write-check" && rm "$d/.write-check" || exit 1; done
